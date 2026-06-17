@@ -175,6 +175,133 @@ def get_verdict(score: float, availability: float, temperature: float) -> tuple[
     return "À optimiser", "Le coût énergétique, la température ou les émissions carbone sont trop élevés."
 
 
+def generate_greenops_tips(
+    metrics: dict,
+    servers: int,
+    user_load: int,
+    cooling: int,
+    optimization: int,
+    renewable_energy: int,
+    energy_price: float,
+) -> list[dict[str, str]]:
+    tips = []
+
+    if metrics["green_score"] < 50:
+        tips.append(
+            {
+                "level": "error",
+                "message": "Green Score faible : priorisez refroidissement, baisse de charge, optimisation et énergie renouvelable.",
+            }
+        )
+
+    if metrics["temperature"] > 80:
+        tips.append(
+            {
+                "level": "error",
+                "message": "Surchauffe critique : augmentez le refroidissement ou réduisez rapidement la charge.",
+            }
+        )
+
+    if cooling < 20 and user_load > 70:
+        message = "Refroidissement insuffisant avec forte charge : risque de surchauffe et de disponibilité dégradée."
+        if cooling == 0:
+            message = "Aucun refroidissement avec forte charge : risque de surchauffe et de disponibilité dégradée."
+        tips.append(
+            {
+                "level": "error",
+                "message": message,
+            }
+        )
+
+    if user_load == 100:
+        tips.append(
+            {
+                "level": "warning",
+                "message": "Charge à 100 % : réduisez la demande ou augmentez l'optimisation logicielle.",
+            }
+        )
+
+    if energy_price >= 0.40:
+        tips.append(
+            {
+                "level": "warning",
+                "message": "Prix de l'électricité élevé : réduisez la consommation et les serveurs actifs non essentiels.",
+            }
+        )
+
+    if renewable_energy == 0:
+        tips.append(
+            {
+                "level": "warning",
+                "message": "Aucune énergie renouvelable : augmentez la part renouvelable pour réduire les émissions CO2.",
+            }
+        )
+
+    if metrics["availability"] < 90:
+        message = "Disponibilité sous 90 % : ajoutez des serveurs ou améliorez l'optimisation logicielle."
+        if servers >= 40:
+            message = "Disponibilité sous 90 % : optimisez le logiciel avant d'ajouter encore du matériel."
+        tips.append(
+            {
+                "level": "warning",
+                "message": message,
+            }
+        )
+
+    if metrics["co2_kg"] > 80 and renewable_energy > 0:
+        tips.append(
+            {
+                "level": "warning",
+                "message": "Émissions CO2 élevées : augmentez la part renouvelable ou réduisez la consommation.",
+            }
+        )
+
+    if metrics["daily_cost"] > 75:
+        message = "Coût journalier élevé : réduisez les serveurs inutiles ou augmentez l'optimisation logicielle."
+        if servers >= 60:
+            message = "Coût journalier élevé : vérifiez si tous les serveurs actifs sont nécessaires."
+        tips.append(
+            {
+                "level": "warning",
+                "message": message,
+            }
+        )
+
+    if cooling >= 80 and metrics["temperature"] < 35:
+        tips.append(
+            {
+                "level": "info",
+                "message": "Refroidissement très élevé pour une température basse : réduisez-le pour économiser de l'énergie.",
+            }
+        )
+
+    if optimization < 30:
+        tips.append(
+            {
+                "level": "info",
+                "message": "Optimisation faible : elle peut réduire la consommation sans ajouter de matériel.",
+            }
+        )
+
+    if metrics["green_score"] > 80:
+        tips.append(
+            {
+                "level": "success",
+                "message": "Excellent équilibre global : performance, sobriété et stabilité sont bien maîtrisées.",
+            }
+        )
+
+    if not tips:
+        tips.append(
+            {
+                "level": "info",
+                "message": "Aucun point critique détecté : ajustez les paramètres pour améliorer le Green Score.",
+            }
+        )
+
+    return tips
+
+
 def build_24h_dataframe(metrics: dict) -> pd.DataFrame:
     hours = np.arange(24)
     load_curve = 0.75 + 0.25 * np.sin((hours - 7) / 24 * 2 * np.pi)
@@ -273,6 +400,28 @@ verdict_title, verdict_text = get_verdict(
 st.subheader(f"🏁 Verdict : {verdict_title}")
 st.write(verdict_text)
 
+st.subheader("💡 Conseils GreenOps")
+
+greenops_tips = generate_greenops_tips(
+    metrics=metrics,
+    servers=servers,
+    user_load=user_load,
+    cooling=cooling,
+    optimization=optimization,
+    renewable_energy=renewable_energy,
+    energy_price=energy_price,
+)
+
+for tip in greenops_tips:
+    if tip["level"] == "error":
+        st.error(tip["message"])
+    elif tip["level"] == "success":
+        st.success(tip["message"])
+    elif tip["level"] == "warning":
+        st.warning(tip["message"])
+    else:
+        st.info(tip["message"])
+
 st.divider()
 
 left, right = st.columns(2)
@@ -292,7 +441,7 @@ with left:
         values="Puissance kW",
         hole=0.45,
     )
-    st.plotly_chart(fig_power, use_container_width=True)
+    st.plotly_chart(fig_power, width="stretch")
 
 with right:
     st.subheader("🌱 Paramètres effectifs")
@@ -321,7 +470,7 @@ with right:
         y="Valeur",
         range_y=[0, 100],
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width="stretch")
 
 st.subheader("📈 Simulation sur 24h")
 
@@ -355,7 +504,7 @@ fig_line.update_layout(
     ),
     legend=dict(orientation="h"),
 )
-st.plotly_chart(fig_line, use_container_width=True)
+st.plotly_chart(fig_line, width="stretch")
 
 st.divider()
 
