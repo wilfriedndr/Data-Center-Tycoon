@@ -583,6 +583,36 @@ def evaluate_mission(simulation_df: pd.DataFrame) -> dict:
     }
 
 
+def compare_scenarios(scenario_a_name: str, scenario_b_name: str) -> pd.DataFrame:
+    rows = []
+
+    for scenario_name in [scenario_a_name, scenario_b_name]:
+        values = SCENARIOS[scenario_name]["values"]
+        metrics = calculate_datacenter_metrics(
+            servers=values["servers"],
+            user_load=values["user_load"],
+            cooling=values["cooling"],
+            optimization=values["optimization"],
+            renewable_energy=values["renewable_energy"],
+            energy_price=values["energy_price"],
+            event=None,
+        )
+
+        rows.append(
+            {
+                "Scénario": scenario_name,
+                "Consommation kWh/jour": round(metrics["daily_energy_kwh"], 0),
+                "Coût €/jour": round(metrics["daily_cost"], 2),
+                "Température °C": round(metrics["temperature"], 1),
+                "Disponibilité %": round(metrics["availability"], 1),
+                "Émissions CO2 kg/jour": round(metrics["co2_kg"], 1),
+                "Green Score": round(metrics["green_score"], 0),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 if "active_event" not in st.session_state:
     st.session_state.active_event = None
 
@@ -943,6 +973,105 @@ else:
         display_df["Émissions CO2 kg"] = display_df["Émissions CO2 kg"].round(1)
         display_df["Green Score"] = display_df["Green Score"].round(0)
         st.dataframe(display_df, hide_index=True)
+
+st.divider()
+
+st.subheader("⚖️ Comparaison de scénarios")
+
+comparison_options = list(SCENARIOS.keys())
+comparison_col1, comparison_col2 = st.columns(2)
+
+with comparison_col1:
+    scenario_a_name = st.selectbox(
+        "Scénario A",
+        options=comparison_options,
+        index=comparison_options.index("🌱 Data center sobre"),
+        key="compare_scenario_a",
+    )
+
+with comparison_col2:
+    scenario_b_name = st.selectbox(
+        "Scénario B",
+        options=comparison_options,
+        index=comparison_options.index("⚡ Performance maximale"),
+        key="compare_scenario_b",
+    )
+
+if scenario_a_name == scenario_b_name:
+    st.info("Sélectionnez deux scénarios différents pour obtenir une comparaison utile.")
+else:
+    comparison_df = compare_scenarios(scenario_a_name, scenario_b_name)
+    comparison_table = comparison_df.set_index("Scénario").T
+
+    st.dataframe(comparison_table)
+
+    graph_df = comparison_df.melt(
+        id_vars="Scénario",
+        var_name="Indicateur",
+        value_name="Valeur",
+    )
+    fig_comparison = px.bar(
+        graph_df,
+        x="Indicateur",
+        y="Valeur",
+        color="Scénario",
+        barmode="group",
+        title="Comparaison des indicateurs clés",
+        labels={"Valeur": "Valeur", "Indicateur": "Indicateur"},
+    )
+    fig_comparison.update_layout(xaxis_tickangle=-25, legend=dict(orientation="h"))
+    st.plotly_chart(fig_comparison, width="stretch")
+
+    comparison_values = comparison_df.set_index("Scénario")
+
+    def pick_best(metric: str, higher_is_better: bool) -> str | None:
+        values = comparison_values[metric]
+        if values.iloc[0] == values.iloc[1]:
+            return None
+        return values.idxmax() if higher_is_better else values.idxmin()
+
+    energy_best = pick_best("Consommation kWh/jour", higher_is_better=False)
+    co2_best = pick_best("Émissions CO2 kg/jour", higher_is_better=False)
+    cost_best = pick_best("Coût €/jour", higher_is_better=False)
+    green_best = pick_best("Green Score", higher_is_better=True)
+    availability_best = pick_best("Disponibilité %", higher_is_better=True)
+
+    if energy_best is None and co2_best is None:
+        sobriety_text = "Les deux scénarios sont équivalents sur la consommation et les émissions CO2."
+    elif energy_best is None:
+        sobriety_text = (
+            f"Les deux scénarios consomment autant d'énergie, tandis que "
+            f"{co2_best} émet moins de CO2."
+        )
+    elif co2_best is None:
+        sobriety_text = (
+            f"Le scénario {energy_best} consomme moins d'énergie, avec des émissions CO2 équivalentes."
+        )
+    elif energy_best == co2_best:
+        sobriety_text = f"Le scénario {energy_best} est le plus sobre : il consomme moins et émet moins de CO2."
+    else:
+        sobriety_text = (
+            f"Le scénario {energy_best} consomme moins d'énergie, tandis que "
+            f"{co2_best} émet moins de CO2."
+        )
+
+    cost_text = (
+        "Les deux scénarios ont le même coût."
+        if cost_best is None
+        else f"Le scénario {cost_best} est le moins cher."
+    )
+    score_text = (
+        "Les deux scénarios ont le même Green Score."
+        if green_best is None
+        else f"{green_best} obtient le meilleur Green Score."
+    )
+    availability_text = (
+        "Les deux scénarios ont la même disponibilité."
+        if availability_best is None
+        else f"{availability_best} offre la meilleure disponibilité."
+    )
+
+    st.info(f"{sobriety_text} {cost_text} {score_text} {availability_text}")
 
 st.divider()
 
