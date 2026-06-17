@@ -82,6 +82,76 @@ EVENTS = [
 ]
 
 
+SCENARIOS = {
+    "Personnalisé": {
+        "description": "Réglages par défaut du MVP, à ajuster librement.",
+        "values": {
+            "servers": 24,
+            "user_load": 65,
+            "cooling": 55,
+            "optimization": 35,
+            "renewable_energy": 40,
+            "energy_price": 0.22,
+        },
+    },
+    "🌱 Data center sobre": {
+        "description": "Priorité à la sobriété, aux renouvelables et à l'optimisation logicielle.",
+        "values": {
+            "servers": 24,
+            "user_load": 55,
+            "cooling": 55,
+            "optimization": 85,
+            "renewable_energy": 85,
+            "energy_price": 0.18,
+        },
+    },
+    "⚡ Performance maximale": {
+        "description": "Capacité élevée et refroidissement renforcé pour absorber une forte demande.",
+        "values": {
+            "servers": 70,
+            "user_load": 90,
+            "cooling": 80,
+            "optimization": 45,
+            "renewable_energy": 35,
+            "energy_price": 0.25,
+        },
+    },
+    "🔥 Incident critique": {
+        "description": "Configuration extrême pour montrer les risques GreenOps majeurs.",
+        "values": {
+            "servers": 80,
+            "user_load": 100,
+            "cooling": 0,
+            "optimization": 35,
+            "renewable_energy": 0,
+            "energy_price": 0.50,
+        },
+    },
+    "💸 Énergie chère": {
+        "description": "Prix de l'électricité élevé, utile pour démontrer l'impact des coûts.",
+        "values": {
+            "servers": 45,
+            "user_load": 75,
+            "cooling": 60,
+            "optimization": 40,
+            "renewable_energy": 25,
+            "energy_price": 0.50,
+        },
+    },
+    "🧠 Optimisation logicielle": {
+        "description": "Exemple montrant l'effet d'une forte optimisation sans surdimensionner le matériel.",
+        "values": {
+            "servers": 32,
+            "user_load": 70,
+            "cooling": 50,
+            "optimization": 95,
+            "renewable_energy": 55,
+            "energy_price": 0.22,
+        },
+    },
+}
+
+
 def clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(value, maximum))
 
@@ -323,6 +393,16 @@ if "active_event" not in st.session_state:
 if "event_history" not in st.session_state:
     st.session_state.event_history = []
 
+if "selected_scenario" not in st.session_state:
+    st.session_state.selected_scenario = "Personnalisé"
+
+if "applied_scenario" not in st.session_state:
+    st.session_state.applied_scenario = None
+
+for key, value in SCENARIOS["Personnalisé"]["values"].items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
 
 st.title("⚡ Data Center Tycoon: GreenOps Simulator")
 
@@ -336,14 +416,33 @@ st.markdown(
 )
 
 with st.sidebar:
+    st.header("🎬 Scénarios de démonstration")
+
+    selected_scenario = st.selectbox(
+        "Choisir un scénario",
+        options=list(SCENARIOS.keys()),
+        key="selected_scenario",
+    )
+
+    scenario = SCENARIOS[selected_scenario]
+
+    if st.session_state.applied_scenario != selected_scenario:
+        for key, value in scenario["values"].items():
+            st.session_state[key] = value
+        st.session_state.applied_scenario = selected_scenario
+
+    st.caption(scenario["description"])
+
+    st.divider()
+
     st.header("🎛️ Paramètres du data center")
 
-    servers = st.slider("Serveurs actifs", 1, 80, 24)
-    user_load = st.slider("Charge utilisateur (%)", 0, 100, 65)
-    cooling = st.slider("Refroidissement (%)", 0, 100, 55)
-    optimization = st.slider("Optimisation logicielle (%)", 0, 100, 35)
-    renewable_energy = st.slider("Énergie renouvelable (%)", 0, 100, 40)
-    energy_price = st.slider("Prix électricité (€/kWh)", 0.10, 0.50, 0.22, 0.01)
+    servers = st.slider("Serveurs actifs", 1, 80, key="servers")
+    user_load = st.slider("Charge utilisateur (%)", 0, 100, key="user_load")
+    cooling = st.slider("Refroidissement (%)", 0, 100, key="cooling")
+    optimization = st.slider("Optimisation logicielle (%)", 0, 100, key="optimization")
+    renewable_energy = st.slider("Énergie renouvelable (%)", 0, 100, key="renewable_energy")
+    energy_price = st.slider("Prix électricité (€/kWh)", 0.10, 0.50, step=0.01, key="energy_price")
 
     st.divider()
 
