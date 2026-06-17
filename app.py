@@ -613,6 +613,69 @@ def compare_scenarios(scenario_a_name: str, scenario_b_name: str) -> pd.DataFram
     return pd.DataFrame(rows)
 
 
+def build_simulation_report(
+    simulation_df: pd.DataFrame,
+    simulation_events: list[dict[str, str]],
+    simulation_config: dict,
+) -> str:
+    mission_result = evaluate_mission(simulation_df)
+    energy_price = simulation_config.get("energy_price", 0)
+    config_lines = [
+        f"- Scénario sélectionné : {simulation_config.get('scenario', 'Non précisé')}",
+        f"- Serveurs actifs : {simulation_config.get('servers', 'Non précisé')}",
+        f"- Charge utilisateur : {simulation_config.get('user_load', 'Non précisé')} %",
+        f"- Refroidissement : {simulation_config.get('cooling', 'Non précisé')} %",
+        f"- Optimisation logicielle : {simulation_config.get('optimization', 'Non précisé')} %",
+        f"- Énergie renouvelable : {simulation_config.get('renewable_energy', 'Non précisé')} %",
+        f"- Prix électricité : {energy_price:.2f} €/kWh",
+    ]
+    objective_lines = [
+        f"- {'✅' if objective['success'] else '❌'} {objective['label']} : {objective['value']}"
+        for objective in mission_result["objectives"]
+    ]
+
+    if simulation_events:
+        event_lines = [
+            f"- {event['Heure']} - {event['Événement']} : {event['Impact']}"
+            for event in simulation_events
+        ]
+    else:
+        event_lines = ["- Aucun événement automatique pendant cette simulation."]
+
+    return "\n".join(
+        [
+            "# Rapport de simulation 24h",
+            "",
+            "## Projet",
+            "Data Center Tycoon: GreenOps Simulator",
+            "",
+            "## Configuration utilisée",
+            *config_lines,
+            "",
+            "## Résultats de mission",
+            f"- Consommation totale sur 24h : {mission_result['total_energy']:.0f} kWh",
+            f"- Coût total sur 24h : {mission_result['total_cost']:.2f} €",
+            f"- Émissions CO2 totales : {mission_result['total_co2']:.1f} kg",
+            f"- Disponibilité moyenne : {mission_result['average_availability']:.1f} %",
+            f"- Température maximale : {mission_result['max_temperature']:.1f} °C",
+            f"- Green Score moyen : {mission_result['average_green_score']:.0f} / 100",
+            f"- Score de mission : {mission_result['mission_score']} / 100",
+            f"- Verdict : {mission_result['verdict']}",
+            "",
+            "## Objectifs",
+            *objective_lines,
+            "",
+            "## Événements survenus",
+            *event_lines,
+            "",
+            "## Note pédagogique",
+            "Les calculs sont simplifiés et pédagogiques. Ils servent à illustrer les compromis GreenOps "
+            "entre énergie, coût, température, disponibilité et émissions CO2, et ne remplacent pas un audit réel.",
+            "",
+        ]
+    )
+
+
 if "active_event" not in st.session_state:
     st.session_state.active_event = None
 
@@ -624,6 +687,9 @@ if "simulation_24h_df" not in st.session_state:
 
 if "simulation_24h_events" not in st.session_state:
     st.session_state.simulation_24h_events = []
+
+if "simulation_24h_config" not in st.session_state:
+    st.session_state.simulation_24h_config = {}
 
 if "selected_scenario" not in st.session_state:
     st.session_state.selected_scenario = "Personnalisé"
@@ -881,12 +947,22 @@ if st.button("▶️ Lancer une simulation 24h"):
     )
     st.session_state.simulation_24h_df = simulation_df
     st.session_state.simulation_24h_events = simulation_events
+    st.session_state.simulation_24h_config = {
+        "scenario": selected_scenario,
+        "servers": servers,
+        "user_load": user_load,
+        "cooling": cooling,
+        "optimization": optimization,
+        "renewable_energy": renewable_energy,
+        "energy_price": energy_price,
+    }
 
 if st.session_state.simulation_24h_df is None:
     st.info("Aucune simulation 24h lancée pour le moment.")
 else:
     simulation_df = st.session_state.simulation_24h_df
     simulation_events = st.session_state.simulation_24h_events
+    simulation_config = st.session_state.simulation_24h_config
     mission_result = evaluate_mission(simulation_df)
 
     sim_col1, sim_col2, sim_col3 = st.columns(3)
@@ -973,6 +1049,32 @@ else:
         display_df["Émissions CO2 kg"] = display_df["Émissions CO2 kg"].round(1)
         display_df["Green Score"] = display_df["Green Score"].round(0)
         st.dataframe(display_df, hide_index=True)
+
+    st.subheader("📤 Export du rapport")
+
+    csv_data = simulation_df.to_csv(index=False).encode("utf-8")
+    report_markdown = build_simulation_report(
+        simulation_df=simulation_df,
+        simulation_events=simulation_events,
+        simulation_config=simulation_config,
+    )
+    report_data = report_markdown.encode("utf-8")
+
+    export_col1, export_col2 = st.columns(2)
+    export_col1.download_button(
+        "⬇️ Télécharger les données horaires CSV",
+        data=csv_data,
+        file_name="data-center-tycoon-simulation-24h.csv",
+        mime="text/csv",
+        key="download_simulation_csv",
+    )
+    export_col2.download_button(
+        "⬇️ Télécharger le rapport Markdown",
+        data=report_data,
+        file_name="data-center-tycoon-rapport-24h.md",
+        mime="text/markdown",
+        key="download_simulation_report",
+    )
 
 st.divider()
 
