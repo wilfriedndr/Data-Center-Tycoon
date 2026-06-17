@@ -523,6 +523,66 @@ def simulate_24h(
     return pd.DataFrame(rows), event_log
 
 
+def evaluate_mission(simulation_df: pd.DataFrame) -> dict:
+    total_energy = simulation_df["Consommation kWh"].sum()
+    total_cost = simulation_df["Coût €"].sum()
+    total_co2 = simulation_df["Émissions CO2 kg"].sum()
+    average_availability = simulation_df["Disponibilité %"].mean()
+    average_green_score = simulation_df["Green Score"].mean()
+    max_temperature = simulation_df["Température °C"].max()
+
+    objectives = [
+        {
+            "label": "Disponibilité moyenne >= 90 %",
+            "success": average_availability >= 90,
+            "value": f"{average_availability:.1f} %",
+        },
+        {
+            "label": "Température maximale < 80 °C",
+            "success": max_temperature < 80,
+            "value": f"{max_temperature:.1f} °C",
+        },
+        {
+            "label": "Green Score moyen >= 70",
+            "success": average_green_score >= 70,
+            "value": f"{average_green_score:.0f} / 100",
+        },
+        {
+            "label": "Émissions CO2 totales < 120 kg",
+            "success": total_co2 < 120,
+            "value": f"{total_co2:.1f} kg",
+        },
+        {
+            "label": "Coût total < 120 €",
+            "success": total_cost < 120,
+            "value": f"{total_cost:.2f} €",
+        },
+    ]
+
+    objectives_success = sum(objective["success"] for objective in objectives)
+    mission_score = int(round(objectives_success / len(objectives) * 100))
+
+    if objectives_success >= 3:
+        verdict = "Mission réussie"
+    elif objectives_success >= 2:
+        verdict = "Mission partiellement réussie"
+    else:
+        verdict = "Mission échouée"
+
+    return {
+        "total_energy": total_energy,
+        "total_cost": total_cost,
+        "total_co2": total_co2,
+        "average_availability": average_availability,
+        "average_green_score": average_green_score,
+        "max_temperature": max_temperature,
+        "objectives_success": objectives_success,
+        "mission_score": mission_score,
+        "verdict": verdict,
+        "objectives": objectives,
+    }
+
+
 if "active_event" not in st.session_state:
     st.session_state.active_event = None
 
@@ -797,16 +857,35 @@ if st.session_state.simulation_24h_df is None:
 else:
     simulation_df = st.session_state.simulation_24h_df
     simulation_events = st.session_state.simulation_24h_events
+    mission_result = evaluate_mission(simulation_df)
 
     sim_col1, sim_col2, sim_col3 = st.columns(3)
     sim_col4, sim_col5, sim_col6 = st.columns(3)
 
-    sim_col1.metric("⚡ Consommation 24h", f"{simulation_df['Consommation kWh'].sum():.0f} kWh")
-    sim_col2.metric("💶 Coût 24h", f"{simulation_df['Coût €'].sum():.2f} €")
-    sim_col3.metric("🌍 CO2 24h", f"{simulation_df['Émissions CO2 kg'].sum():.1f} kg")
-    sim_col4.metric("🛡️ Disponibilité moyenne", f"{simulation_df['Disponibilité %'].mean():.1f} %")
-    sim_col5.metric("🌱 Green Score moyen", f"{simulation_df['Green Score'].mean():.0f} / 100")
-    sim_col6.metric("🌡️ Température max", f"{simulation_df['Température °C'].max():.1f} °C")
+    sim_col1.metric("⚡ Consommation 24h", f"{mission_result['total_energy']:.0f} kWh")
+    sim_col2.metric("💶 Coût 24h", f"{mission_result['total_cost']:.2f} €")
+    sim_col3.metric("🌍 CO2 24h", f"{mission_result['total_co2']:.1f} kg")
+    sim_col4.metric("🛡️ Disponibilité moyenne", f"{mission_result['average_availability']:.1f} %")
+    sim_col5.metric("🌱 Green Score moyen", f"{mission_result['average_green_score']:.0f} / 100")
+    sim_col6.metric("🌡️ Température max", f"{mission_result['max_temperature']:.1f} °C")
+
+    st.subheader("🏆 Résultat de mission")
+
+    if mission_result["verdict"] == "Mission réussie":
+        st.success(f"{mission_result['verdict']} - Score de mission : {mission_result['mission_score']} / 100")
+    elif mission_result["verdict"] == "Mission partiellement réussie":
+        st.warning(f"{mission_result['verdict']} - Score de mission : {mission_result['mission_score']} / 100")
+    else:
+        st.error(f"{mission_result['verdict']} - Score de mission : {mission_result['mission_score']} / 100")
+
+    st.write(
+        f"{mission_result['objectives_success']} objectif(s) validé(s) sur "
+        f"{len(mission_result['objectives'])}."
+    )
+
+    for objective in mission_result["objectives"]:
+        icon = "✅" if objective["success"] else "❌"
+        st.markdown(f"{icon} **{objective['label']}** - {objective['value']}")
 
     st.markdown("**Journal des événements de la journée**")
     if simulation_events:
