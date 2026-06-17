@@ -12,6 +12,61 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+    .hero {
+        border: 1px solid rgba(128, 128, 128, 0.28);
+        border-radius: 8px;
+        padding: 1.25rem 1.4rem;
+        background: var(--secondary-background-color);
+        color: var(--text-color);
+        margin-bottom: 1rem;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    }
+    .hero h1 {
+        margin: 0 0 0.35rem 0;
+        font-size: 2.25rem;
+        line-height: 1.1;
+        color: var(--text-color);
+    }
+    .hero p {
+        margin: 0.25rem 0;
+        font-size: 1.02rem;
+        color: var(--text-color);
+    }
+    .hero strong {
+        color: var(--text-color);
+    }
+    .status-badge {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.18rem 0.55rem;
+        font-size: 0.82rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        margin-top: 0.25rem;
+    }
+    .badge-good {
+        background: #e8f6ee;
+        border-color: #9fd5b1;
+        color: #146c3f;
+    }
+    .badge-medium {
+        background: #fff4d7;
+        border-color: #f1cb6a;
+        color: #875b00;
+    }
+    .badge-bad {
+        background: #fde8e8;
+        border-color: #f2a3a3;
+        color: #9f1f1f;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 EVENTS = [
     {
         "name": "Pic de trafic",
@@ -245,6 +300,34 @@ def get_verdict(score: float, availability: float, temperature: float) -> tuple[
     return "À optimiser", "Le coût énergétique, la température ou les émissions carbone sont trop élevés."
 
 
+def get_temperature_status(temperature: float) -> tuple[str, str]:
+    if temperature >= 80:
+        return "Critique", "badge-bad"
+    if temperature >= 65:
+        return "Élevée", "badge-medium"
+    return "Normale", "badge-good"
+
+
+def get_availability_status(availability: float) -> tuple[str, str]:
+    if availability >= 95:
+        return "Excellente", "badge-good"
+    if availability >= 90:
+        return "Correcte", "badge-medium"
+    return "Faible", "badge-bad"
+
+
+def get_green_score_status(score: float) -> tuple[str, str]:
+    if score >= 80:
+        return "Excellent", "badge-good"
+    if score >= 60:
+        return "Correct", "badge-medium"
+    return "Faible", "badge-bad"
+
+
+def status_badge(label: str, css_class: str) -> str:
+    return f'<span class="status-badge {css_class}">{label}</span>'
+
+
 def generate_greenops_tips(
     metrics: dict,
     servers: int,
@@ -404,15 +487,31 @@ for key, value in SCENARIOS["Personnalisé"]["values"].items():
         st.session_state[key] = value
 
 
-st.title("⚡ Data Center Tycoon: GreenOps Simulator")
-
 st.markdown(
     """
-    Gérez un mini data center en équilibrant **performance**, **consommation énergétique**,
-    **coût**, **température**, **émissions carbone** et **disponibilité du service**.
+    <div class="hero">
+        <h1>⚡ Data Center Tycoon: GreenOps Simulator</h1>
+        <p><strong>Pilotez un data center sous contraintes énergie, coût, carbone et disponibilité.</strong></p>
+        <p>Objectif du joueur : obtenir le meilleur Green Score sans faire tomber la stabilité de l'infrastructure.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-    L’objectif : obtenir le meilleur **Green Score** sans sacrifier la stabilité de l’infrastructure.
-    """
+st.subheader("🎯 Objectif de simulation")
+
+objective_cols = st.columns(5)
+objective_cols[0].markdown("**🛡️ Disponibilité**<br>Maintenir le service stable.", unsafe_allow_html=True)
+objective_cols[1].markdown("**🌡️ Température**<br>Limiter les risques de surchauffe.", unsafe_allow_html=True)
+objective_cols[2].markdown("**💶 Coût**<br>Réduire la facture quotidienne.", unsafe_allow_html=True)
+objective_cols[3].markdown("**🌍 CO2**<br>Diminuer les émissions.", unsafe_allow_html=True)
+objective_cols[4].markdown("**🌱 Score**<br>Maximiser le Green Score.", unsafe_allow_html=True)
+
+st.subheader("📚 Lecture pédagogique")
+st.info(
+    "Le simulateur illustre les compromis GreenOps entre capacité, charge, refroidissement, coût et énergie renouvelable. "
+    "Les résultats réagissent immédiatement aux choix de configuration pour faciliter une démonstration rapide. "
+    "Les calculs sont simplifiés et pédagogiques : ils montrent des tendances, pas un audit énergétique réel."
 )
 
 with st.sidebar:
@@ -477,16 +576,53 @@ else:
 
 st.subheader("📊 Tableau de bord")
 
+temperature_status, temperature_class = get_temperature_status(metrics["temperature"])
+availability_status, availability_class = get_availability_status(metrics["availability"])
+green_score_status, green_score_class = get_green_score_status(metrics["green_score"])
+
 col1, col2, col3 = st.columns(3)
 col4, col5, col6 = st.columns(3)
 
-col1.metric("Consommation / jour", f"{metrics['daily_energy_kwh']:.0f} kWh")
-col2.metric("Coût / jour", f"{metrics['daily_cost']:.2f} €")
-col3.metric("Température", f"{metrics['temperature']:.1f} °C")
+col1.metric(
+    "⚡ Consommation / jour",
+    f"{metrics['daily_energy_kwh']:.0f} kWh",
+    delta=f"{metrics['total_power_kw']:.1f} kW moyens",
+    delta_color="off",
+)
+col2.metric(
+    "💶 Coût / jour",
+    f"{metrics['daily_cost']:.2f} €",
+    delta=f"{metrics['effective_price']:.2f} €/kWh",
+    delta_color="off",
+)
+col3.metric(
+    "🌡️ Température",
+    f"{metrics['temperature']:.1f} °C",
+    delta=temperature_status,
+    delta_color="off",
+)
+col3.markdown(status_badge(temperature_status, temperature_class), unsafe_allow_html=True)
 
-col4.metric("Disponibilité", f"{metrics['availability']:.1f} %")
-col5.metric("Émissions CO₂ / jour", f"{metrics['co2_kg']:.1f} kg")
-col6.metric("Green Score", f"{metrics['green_score']:.0f} / 100")
+col4.metric(
+    "🛡️ Disponibilité",
+    f"{metrics['availability']:.1f} %",
+    delta=availability_status,
+    delta_color="off",
+)
+col4.markdown(status_badge(availability_status, availability_class), unsafe_allow_html=True)
+col5.metric(
+    "🌍 Émissions CO₂ / jour",
+    f"{metrics['co2_kg']:.1f} kg",
+    delta=f"{metrics['effective_renewable']:.0f} % renouvelable",
+    delta_color="off",
+)
+col6.metric(
+    "🌱 Green Score",
+    f"{metrics['green_score']:.0f} / 100",
+    delta=green_score_status,
+    delta_color="off",
+)
+col6.markdown(status_badge(green_score_status, green_score_class), unsafe_allow_html=True)
 
 st.progress(int(metrics["green_score"]) / 100)
 
@@ -539,7 +675,10 @@ with left:
         names="Type",
         values="Puissance kW",
         hole=0.45,
+        title="Répartition de la puissance consommée",
     )
+    fig_power.update_traces(textposition="inside", textinfo="percent+label")
+    fig_power.update_layout(legend_title_text="Poste de consommation")
     st.plotly_chart(fig_power, width="stretch")
 
 with right:
@@ -568,7 +707,12 @@ with right:
         x="Paramètre",
         y="Valeur",
         range_y=[0, 100],
+        text="Valeur",
+        title="Paramètres effectifs après scénario et événement",
+        labels={"Valeur": "Valeur (%)", "Paramètre": "Paramètre"},
     )
+    fig_bar.update_traces(texttemplate="%{y:.0f}%", textposition="outside")
+    fig_bar.update_layout(showlegend=False)
     st.plotly_chart(fig_bar, width="stretch")
 
 st.subheader("📈 Simulation sur 24h")
@@ -594,6 +738,7 @@ fig_line.add_trace(
     )
 )
 fig_line.update_layout(
+    title="Évolution simulée sur 24 heures",
     xaxis_title="Heure",
     yaxis_title="Consommation kWh",
     yaxis2=dict(
