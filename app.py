@@ -455,19 +455,72 @@ def generate_greenops_tips(
     return tips
 
 
-def build_24h_dataframe(metrics: dict) -> pd.DataFrame:
-    hours = np.arange(24)
-    load_curve = 0.75 + 0.25 * np.sin((hours - 7) / 24 * 2 * np.pi)
-    energy = metrics["daily_energy_kwh"] / 24 * load_curve
-    temperature = metrics["temperature"] + 5 * np.sin((hours - 12) / 24 * 2 * np.pi)
+def simulate_24h(
+    servers: int,
+    user_load: int,
+    cooling: int,
+    optimization: int,
+    renewable_energy: int,
+    energy_price: float,
+) -> tuple[pd.DataFrame, list[dict[str, str]]]:
+    event_hours = sorted(random.sample(range(6, 23), k=3))
+    scheduled_events = {hour: random.choice(EVENTS) for hour in event_hours}
+    rows = []
+    event_log = []
 
-    return pd.DataFrame(
-        {
-            "Heure": hours,
-            "Consommation kWh": energy,
-            "Température °C": temperature,
-        }
-    )
+    for hour in range(24):
+        if hour < 6:
+            load_factor = 0.55
+        elif hour < 9:
+            load_factor = 0.75
+        elif hour < 13:
+            load_factor = 1.00
+        elif hour < 19:
+            load_factor = 1.12
+        elif hour < 22:
+            load_factor = 0.90
+        else:
+            load_factor = 0.65
+
+        hourly_load = int(round(clamp(user_load * load_factor + random.uniform(-4, 4), 0, 100)))
+        event = scheduled_events.get(hour)
+        hourly_metrics = calculate_datacenter_metrics(
+            servers=servers,
+            user_load=hourly_load,
+            cooling=cooling,
+            optimization=optimization,
+            renewable_energy=renewable_energy,
+            energy_price=energy_price,
+            event=event,
+        )
+
+        event_name = "Aucun"
+        if event:
+            event_name = event["name"]
+            event_log.append(
+                {
+                    "Heure": f"{hour:02d}:00",
+                    "Événement": f"{event['emoji']} {event['name']}",
+                    "Impact": event["description"],
+                }
+            )
+
+        rows.append(
+            {
+                "Heure": f"{hour:02d}:00",
+                "Charge simulée %": hourly_load,
+                "Charge effective %": hourly_metrics["effective_load"],
+                "Événement": event_name,
+                "Consommation kWh": hourly_metrics["daily_energy_kwh"] / 24,
+                "Coût €": hourly_metrics["daily_cost"] / 24,
+                "Température °C": hourly_metrics["temperature"],
+                "Disponibilité %": hourly_metrics["availability"],
+                "Émissions CO2 kg": hourly_metrics["co2_kg"] / 24,
+                "Green Score": hourly_metrics["green_score"],
+            }
+        )
+
+    return pd.DataFrame(rows), event_log
 
 
 if "active_event" not in st.session_state:
@@ -475,6 +528,12 @@ if "active_event" not in st.session_state:
 
 if "event_history" not in st.session_state:
     st.session_state.event_history = []
+
+if "simulation_24h_df" not in st.session_state:
+    st.session_state.simulation_24h_df = None
+
+if "simulation_24h_events" not in st.session_state:
+    st.session_state.simulation_24h_events = []
 
 if "selected_scenario" not in st.session_state:
     st.session_state.selected_scenario = "Personnalisé"
@@ -715,40 +774,96 @@ with right:
     fig_bar.update_layout(showlegend=False)
     st.plotly_chart(fig_bar, width="stretch")
 
-st.subheader("📈 Simulation sur 24h")
+st.subheader("🕒 Simulation 24h")
 
-hourly_df = build_24h_dataframe(metrics)
+st.write(
+    "Lancez une journée complète pour voir l'effet des variations de charge et des événements aléatoires heure par heure."
+)
 
-fig_line = go.Figure()
-fig_line.add_trace(
-    go.Scatter(
-        x=hourly_df["Heure"],
-        y=hourly_df["Consommation kWh"],
-        mode="lines+markers",
-        name="Consommation kWh",
+if st.button("▶️ Lancer une simulation 24h"):
+    simulation_df, simulation_events = simulate_24h(
+        servers=servers,
+        user_load=user_load,
+        cooling=cooling,
+        optimization=optimization,
+        renewable_energy=renewable_energy,
+        energy_price=energy_price,
     )
-)
-fig_line.add_trace(
-    go.Scatter(
-        x=hourly_df["Heure"],
-        y=hourly_df["Température °C"],
-        mode="lines+markers",
-        name="Température °C",
-        yaxis="y2",
+    st.session_state.simulation_24h_df = simulation_df
+    st.session_state.simulation_24h_events = simulation_events
+
+if st.session_state.simulation_24h_df is None:
+    st.info("Aucune simulation 24h lancée pour le moment.")
+else:
+    simulation_df = st.session_state.simulation_24h_df
+    simulation_events = st.session_state.simulation_24h_events
+
+    sim_col1, sim_col2, sim_col3 = st.columns(3)
+    sim_col4, sim_col5, sim_col6 = st.columns(3)
+
+    sim_col1.metric("⚡ Consommation 24h", f"{simulation_df['Consommation kWh'].sum():.0f} kWh")
+    sim_col2.metric("💶 Coût 24h", f"{simulation_df['Coût €'].sum():.2f} €")
+    sim_col3.metric("🌍 CO2 24h", f"{simulation_df['Émissions CO2 kg'].sum():.1f} kg")
+    sim_col4.metric("🛡️ Disponibilité moyenne", f"{simulation_df['Disponibilité %'].mean():.1f} %")
+    sim_col5.metric("🌱 Green Score moyen", f"{simulation_df['Green Score'].mean():.0f} / 100")
+    sim_col6.metric("🌡️ Température max", f"{simulation_df['Température °C'].max():.1f} °C")
+
+    st.markdown("**Journal des événements de la journée**")
+    if simulation_events:
+        st.dataframe(pd.DataFrame(simulation_events), hide_index=True)
+    else:
+        st.write("Aucun événement automatique pendant cette simulation.")
+
+    fig_line = go.Figure()
+    fig_line.add_trace(
+        go.Scatter(
+            x=simulation_df["Heure"],
+            y=simulation_df["Consommation kWh"],
+            mode="lines+markers",
+            name="Consommation kWh",
+        )
     )
-)
-fig_line.update_layout(
-    title="Évolution simulée sur 24 heures",
-    xaxis_title="Heure",
-    yaxis_title="Consommation kWh",
-    yaxis2=dict(
-        title="Température °C",
-        overlaying="y",
-        side="right",
-    ),
-    legend=dict(orientation="h"),
-)
-st.plotly_chart(fig_line, width="stretch")
+    fig_line.add_trace(
+        go.Scatter(
+            x=simulation_df["Heure"],
+            y=simulation_df["Température °C"],
+            mode="lines+markers",
+            name="Température °C",
+            yaxis="y2",
+        )
+    )
+    fig_line.add_trace(
+        go.Scatter(
+            x=simulation_df["Heure"],
+            y=simulation_df["Green Score"],
+            mode="lines+markers",
+            name="Green Score",
+            yaxis="y2",
+        )
+    )
+    fig_line.update_layout(
+        title="Simulation horaire : consommation, température et Green Score",
+        xaxis_title="Heure",
+        yaxis_title="Consommation kWh",
+        yaxis2=dict(
+            title="Température °C / Green Score",
+            overlaying="y",
+            side="right",
+            range=[0, 100],
+        ),
+        legend=dict(orientation="h"),
+    )
+    st.plotly_chart(fig_line, width="stretch")
+
+    with st.expander("Voir le détail heure par heure"):
+        display_df = simulation_df.copy()
+        display_df["Consommation kWh"] = display_df["Consommation kWh"].round(1)
+        display_df["Coût €"] = display_df["Coût €"].round(2)
+        display_df["Température °C"] = display_df["Température °C"].round(1)
+        display_df["Disponibilité %"] = display_df["Disponibilité %"].round(1)
+        display_df["Émissions CO2 kg"] = display_df["Émissions CO2 kg"].round(1)
+        display_df["Green Score"] = display_df["Green Score"].round(0)
+        st.dataframe(display_df, hide_index=True)
 
 st.divider()
 
